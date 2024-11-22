@@ -1,6 +1,7 @@
 from compress import compress
 from decompress import decompress
 import numpy as np
+from skimage import io, color
 
 def generate_quant_matrix(q):
     Q = np.array([
@@ -15,6 +16,24 @@ def generate_quant_matrix(q):
     ])
     return Q * (50/q)
 
+def calculate_rmse(image1, image2):
+    # Ensure the images are numpy arrays
+    image1 = np.array(image1)
+    image2 = np.array(image2)
+
+    # Check if the images have the same shape
+    if image1.shape != image2.shape:
+        raise ValueError("Images must have the same dimensions")
+
+    # Calculate the squared differences between the images
+    squared_diff = (image1 - image2) ** 2
+
+    # Calculate the MSE
+    mse = np.mean(squared_diff)
+    rmse = np.sqrt(mse)
+    
+    return rmse
+
 
 if __name__ == "__main__":
     quality_factor = 50  # Set the quality factor (can be adjusted)
@@ -24,3 +43,10 @@ if __name__ == "__main__":
     compress(image_path, quant_matrix)
     binary_path = "kodak24.bin"
     decompress(binary_path, quant_matrix)
+
+    image1 = io.imread(image_path)
+    image2 = io.imread(image_path[:-4] + "_reconstruct.jpg")
+    # image2 = io.imread("compressed.jpg")
+
+    print(calculate_rmse(image1, image2))
+

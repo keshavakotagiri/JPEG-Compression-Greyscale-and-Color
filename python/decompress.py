@@ -27,9 +27,10 @@ def decompress_blocks(compressed_data, block_size=64, marker=32767):
     for num in compressed_data:
         if num == marker:  # When the EOB marker is found
             # Ensure the block size is 64
-            remaining_zeros = block_size - len(current_block)
-            current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
-            blocks.append(np.array(current_block))  # Add the block to the list
+            if len(current_block) > 0:  # Avoid appending empty blocks
+                remaining_zeros = block_size - len(current_block)
+                current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
+                blocks.append(np.array(current_block))  # Add the block to the list
             current_block = []  # Reset for the next block
         else:
             current_block.append(num)  # Add the number to the current block
@@ -39,11 +40,41 @@ def decompress_blocks(compressed_data, block_size=64, marker=32767):
             blocks.append(np.array(current_block))  # Add the full block to the list
             current_block = []  # Reset for the next block
     
+    # If there's any leftover data that isn't a full block, pad it
+    if len(current_block) > 0:
+        remaining_zeros = block_size - len(current_block)
+        current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
+        blocks.append(np.array(current_block))  # Add the final block
+
     return blocks
 
-def convert_to_8x8(block):
-    # Reshape the block (a 1D array with 64 elements) into a 2D array (8x8)
-    return np.reshape(block, (8, 8))
+def reverse_zigzag_order(zigzag_block):
+    """
+    Reverse the zigzag order and convert the 1D array back to an 8x8 block.
+    """
+    zigzag_indices = [
+        (0, 0), (0, 1), (1, 0), (2, 0), (1, 1), (0, 2), (0, 3), (1, 2),
+        (2, 1), (3, 0), (4, 0), (3, 1), (2, 2), (1, 3), (0, 4), (0, 5),
+        (1, 4), (2, 3), (3, 2), (4, 1), (5, 0), (6, 0), (5, 1), (4, 2),
+        (3, 3), (2, 4), (1, 5), (0, 6), (0, 7), (1, 6), (2, 5), (3, 4),
+        (4, 3), (5, 2), (6, 1), (7, 0), (7, 1), (6, 2), (5, 3), (4, 4),
+        (3, 5), (2, 6), (1, 7), (2, 7), (3, 6), (4, 5), (5, 4), (6, 3),
+        (7, 2), (7, 3), (6, 4), (5, 5), (4, 6), (3, 7), (4, 7), (5, 6),
+        (6, 5), (7, 4), (7, 5), (6, 6), (5, 7), (6, 7), (7, 6), (7, 7)
+    ]
+    
+    # Create an empty 8x8 block
+    block = np.zeros((8, 8))
+    
+    # Fill the block using the reverse zigzag indices
+    for idx, (i, j) in enumerate(zigzag_indices):
+        block[i, j] = zigzag_block[idx]
+    
+    return block
+
+# def convert_to_8x8(block):
+#     # Reshape the block (a 1D array with 64 elements) into a 2D array (8x8)
+#     return np.reshape(block, (8, 8))
 
 def apply_idct_dequantize(block, Q):
     block_dequantized = block * Q
@@ -95,9 +126,11 @@ def decompress(filename, Q):
 
 def decompress_greyscale(encoded_data, Q, filename, num_H_blocks, num_W_blocks):
     arr = np.array(huffman_decompress_binary(encoded_data))
+    print(arr.shape)
     blocks = decompress_blocks(arr)
     blocks = np.array(blocks)
-    reshaped_blocks = [convert_to_8x8(block) for block in blocks]
+    print(blocks.shape)
+    reshaped_blocks = [reverse_zigzag_order(block) for block in blocks]
     idct_dequantize_blocks = [apply_idct_dequantize(block, Q) for block in reshaped_blocks]  # Apply dequantize to each block and then IDCT
     
     reconstructed_image = rejoin_blocks(idct_dequantize_blocks, num_H_blocks, num_W_blocks)

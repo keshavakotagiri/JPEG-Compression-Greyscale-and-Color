@@ -28,6 +28,7 @@ def pad_to_multiple_of_8(matrix):
     # Calculate how much padding is needed
     pad_h = (8 - H % 8) % 8  # Padding for height to make it a multiple of 8
     pad_w = (8 - W % 8) % 8  # Padding for width to make it a multiple of 8
+    # print(pad_h, pad_w)
     
     # Apply the padding using numpy's pad function
     padded_matrix = np.pad(matrix, ((0, pad_h), (0, pad_w)), mode='constant', constant_values=0)
@@ -60,12 +61,19 @@ def zigzag_order(block):
     return np.array([block[i, j] for i, j in zigzag_indices])
 
 def replace_trailing_zeros_with_marker(block, marker=32767):
+    """
+    Replace trailing zeros with a marker value (default: 32767).
+    """
     block = np.array(block)  # Ensure it's an array for indexing
     # Find the last non-zero position
     last_nonzero = np.max(np.where(block != 0)) if np.any(block != 0) else -1
     
     # Replace trailing zeros with the marker
-    result = np.concatenate((block[:last_nonzero + 1], [marker]))
+    if last_nonzero == -1:
+        result = [marker]  # Entire block is zero, only the marker should be added
+    else:
+        result = np.concatenate((block[:last_nonzero + 1], [marker]))
+    
     return result
 
 
@@ -102,27 +110,30 @@ def compress_greyscale(image, Q, filename):
     W = image.shape[1]
     # print(H*W/64)
     blocks = image.reshape(H // 8, 8, W // 8, 8)
+    
     # divide it into blocks
     
     # Rearrange the axes to get a list of blocks
     blocks = blocks.swapaxes(1, 2).reshape(-1, 8, 8)
-
+    
     # quantized_blocks = np.apply_along_axis(apply_dct_quantization, axis=1, arr=blocks, Q=Q)
     # print(blocks[2000])
     quantized_blocks = np.array([apply_dct_quantization(block, Q) for block in blocks])
     # print(quantized_blocks.shape)
     # print(quantized_blocks[2000])
-
+    
     # now hard part starts
 
     # first we need to do zigzag ordering
     zigzagged_blocks = np.array([zigzag_order(block) for block in quantized_blocks])
     # print(zigzagged_blocks.shape)
+    
 
     # next we need to do replace trailing zero's with a EOB marker
     # now concatenate all these compressed blocks
     compressed_blocks = np.array(flatten_and_compress_blocks(zigzagged_blocks))
     # print(compressed_blocks[-1])
+    print(compressed_blocks.shape)
 
     # next we will have to implement huffman encoding
     # and we need to create a bit string which we need to save in some file
@@ -139,7 +150,7 @@ def compress_greyscale(image, Q, filename):
     # Combine the two strings into a single 20-bit string
     size_str = H_str + W_str
     final_bit_string = '0' + size_str + huffman_encoded_bit_string # greyscale hence 0
-    print(final_bit_string[:100])
+    # print(final_bit_string[:100])
 
     filename = filename[:-4] + '.bin' # remove the '.png' or '.jpg' part and put '.bin'
     save_to_file(final_bit_string, filename)
