@@ -1,5 +1,6 @@
 from compress import compress
 from decompress import decompress
+import colour_changer
 import numpy as np
 from skimage import io, color
 
@@ -49,34 +50,64 @@ if __name__ == "__main__":
 
     compressed_img = f"{img_name}_compressed.jpg"
 
-    compress(image_path, quant_matrix)
-
     if(len(shape) == 3):
-        red_bin = f"{img_name}_red.bin"
-        green_bin = f"{img_name}_green.bin"
-        blue_bin = f"{img_name}_blue.bin"
-        
-        red_decoded = decompress(red_bin, quant_matrix, img_name, color="red")
-        green_decoded = decompress(green_bin, quant_matrix, img_name, color="green")
-        blue_decoded = decompress(blue_bin, quant_matrix, img_name, color="blue")
+        my_sampling = input("Do you want to compress the image using chroma subsampling? (yes/no): ")
+        if my_sampling == "yes":
+            Y_shape = img[:, :, 0].shape
+            chroma_subsampling = True
+            compress(image_path, quant_matrix, chroma_subsampling=True)
 
-        I1 = io.imread(f"{img_name}_red_compressed.jpg")
-        I2 = io.imread(f"{img_name}_green_compressed.jpg")
-        I3 = io.imread(f"{img_name}_blue_compressed.jpg")
-        I1 = I1.astype(np.uint8)
-        I2 = I2.astype(np.uint8)
-        I3 = I3.astype(np.uint8)
-        reconstructed_image = np.stack((I1, I2, I3), axis=-1)
+            Y_bin = f"{img_name}_Y.bin"
+            Cb_bin = f"{img_name}_Cb.bin"
+            Cr_bin = f"{img_name}_Cr.bin"
 
-        io.imsave(compressed_img, reconstructed_image) 
-        print(calculate_rmse(img, reconstructed_image))
+            decompress(Y_bin, quant_matrix, img_name, color="Y")
+            decompress(Cb_bin, quant_matrix, img_name, color="Cb")
+            decompress(Cr_bin, quant_matrix, img_name, color="Cr")
+
+            I1 = io.imread(f"{img_name}_Y_compressed.jpg")
+            I2 = io.imread(f"{img_name}_Cb_compressed.jpg")
+            I3 = io.imread(f"{img_name}_Cr_compressed.jpg")
+
+            Cb_upsampled = colour_changer.upsample_channel(I2, (Y_shape[0], Y_shape[1])).astype(np.uint8)
+            Cr_upsampled = colour_changer.upsample_channel(I3, (Y_shape[0], Y_shape[1])).astype(np.uint8)
+
+            reconstructed_image = np.stack((I1, Cb_upsampled, Cr_upsampled), axis=-1)
+            reconstructed_image = colour_changer.ycbcr_to_rgb(reconstructed_image)
+
+            io.imsave(compressed_img, reconstructed_image)
+            print(calculate_rmse(img, reconstructed_image))
+
+
+        else:
+            compress(image_path, quant_matrix, chroma_subsampling=False)
+
+            red_bin = f"{img_name}_red.bin"
+            green_bin = f"{img_name}_green.bin"
+            blue_bin = f"{img_name}_blue.bin"
+            
+            red_decoded = decompress(red_bin, quant_matrix, img_name, color="red")
+            green_decoded = decompress(green_bin, quant_matrix, img_name, color="green")
+            blue_decoded = decompress(blue_bin, quant_matrix, img_name, color="blue")
+
+            I1 = io.imread(f"{img_name}_red_compressed.jpg")
+            I2 = io.imread(f"{img_name}_green_compressed.jpg")
+            I3 = io.imread(f"{img_name}_blue_compressed.jpg")
+            # I1 = I1.astype(np.uint8)
+            # I2 = I2.astype(np.uint8)
+            # I3 = I3.astype(np.uint8)
+            reconstructed_image = np.stack((I1, I2, I3), axis=-1)
+
+            io.imsave(compressed_img, reconstructed_image) 
+            print(calculate_rmse(img, reconstructed_image))
 
     elif(len(shape) == 2):
+        compress(image_path, quant_matrix, chroma_subsampling=False)
         binary_path = f"{img_name}_grey.bin"
         decompress(binary_path, quant_matrix, img_name, color="grey")
         
         image1 = io.imread(image_path)
-        image2 = io.imread(f"{img_name}_grey_reconstruct.jpg")
+        image2 = io.imread(f"{img_name}_compressed.jpg")
         # image2 = io.imread("compressed.jpg")
 
         print(calculate_rmse(image1, image2))

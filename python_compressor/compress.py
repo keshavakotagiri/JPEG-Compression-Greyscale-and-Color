@@ -5,6 +5,7 @@ import heapq
 from collections import defaultdict, Counter
 from huffman import huffman_compress_binary
 from binary import save_to_file
+import colour_changer
 
 
 # def generate_quant_matrix(q):
@@ -33,7 +34,7 @@ def pad_to_multiple_of_8(matrix):
     # Apply the padding using numpy's pad function
     padded_matrix = np.pad(matrix, ((0, pad_h), (0, pad_w)), mode='constant', constant_values=0)
     
-    return padded_matrix
+    return padded_matrix, pad_h, pad_w
 
 def apply_dct_quantization(block, Q):
     # Step 1: Apply DCT (Discrete Cosine Transform)
@@ -79,23 +80,31 @@ def replace_trailing_zeros_with_marker(block, marker=32767):
 
 def flatten_and_compress_blocks(blocks, marker=32767):
     compressed_data = []
+    x = 0
     for block in blocks:
         # Replace trailing zeros with the marker
         compressed_block = replace_trailing_zeros_with_marker(block, marker)
         # Append the compressed block to the final list
+        if(len(compressed_block) == 0):
+            x += 1
         compressed_data.extend(map(int, compressed_block))
+    print("number of blocks skipped wrongly: ", x)
+    print("num of blocks after compression: ", compressed_data.count(marker))
     return compressed_data
 
-def compress(filename, Q):
+def compress(filename, Q, chroma_subsampling=False):
     img_name = filename.split(".")[0]
     image = io.imread(filename)
-    # print(image[20][102])
-    # image -= 128
-    # print(image[20][102])
+
     shape = image.shape
     if(len(shape) == 3):
-        print("color")
-        compress_color(image, Q, img_name)
+        if chroma_subsampling:
+            print("chroma_subsampling ")
+            image = colour_changer.rgb_to_ycbcr(image)
+            compress_ycbcr_color(image, Q, img_name)
+        else:
+            print("color")
+            compress_color(image, Q, img_name)
     elif(len(shape) == 2):
         print("greyscale")
         compress_greyscale(image, Q, "grey", img_name)
@@ -106,35 +115,27 @@ def compress(filename, Q):
 ###############################################################################################################
 
 def compress_greyscale(image, Q, colour, img_name):
-    image = pad_to_multiple_of_8(image)
+    image, pad_h, pad_w = pad_to_multiple_of_8(image)
     # we are doing this cuz image might not have size as multiple of 8 na
     H = image.shape[0]
     W = image.shape[1]
-    # print(H*W/64)
+    print(H, W)
     blocks = image.reshape(H // 8, 8, W // 8, 8)
-    
+
     # divide it into blocks
-    
     # Rearrange the axes to get a list of blocks
     blocks = blocks.swapaxes(1, 2).reshape(-1, 8, 8)
     
-    # quantized_blocks = np.apply_along_axis(apply_dct_quantization, axis=1, arr=blocks, Q=Q)
-    # print(blocks[2000])
     quantized_blocks = np.array([apply_dct_quantization(block, Q) for block in blocks])
-    # print(quantized_blocks.shape)
-    # print(quantized_blocks[2000])
     
     # now hard part starts
-
     # first we need to do zigzag ordering
     zigzagged_blocks = np.array([zigzag_order(block) for block in quantized_blocks])
-    # print(zigzagged_blocks.shape)
     
-
     # next we need to do replace trailing zero's with a EOB marker
     # now concatenate all these compressed blocks
     compressed_blocks = np.array(flatten_and_compress_blocks(zigzagged_blocks))
-    # print(compressed_blocks[-1])
+
     print(compressed_blocks.shape, "->", colour)
 
     # next we will have to implement huffman encoding
@@ -148,10 +149,12 @@ def compress_greyscale(image, Q, colour, img_name):
     # Convert them to strings of size 10
     H_str = format(H_div_8, '010b')  
     W_str = format(W_div_8, '010b')
-
+    pad_h_str = format(pad_h, '03b')
+    pad_w_str = format(pad_w, '03b')
     # Combine the two strings into a single 20-bit string
     size_str = H_str + W_str
-    final_bit_string = '0' + size_str + huffman_encoded_bit_string # greyscale hence 0
+    pad_str = pad_h_str + pad_w_str
+    final_bit_string = '0' + size_str + pad_str + huffman_encoded_bit_string # greyscale hence 0
     # print(final_bit_string[:100])
 
     # filename = filename[:-4] + '.bin' # remove the '.png' or '.jpg' part and put '.bin'
@@ -166,4 +169,13 @@ def compress_color(image, Q, img_name):
     compress_greyscale(blue_img, Q, "blue", img_name)
     return
 
+def compress_ycbcr_color(image, Q, img_name):
+    Y = image[:, :, 0]
+    Cb = colour_changer.downsample_channel(image[:, :, 1])
+    Cr = colour_changer.downsample_channel(image[:, :, 2])
 
+    # print("Cb array is:", Cb)
+    compress_greyscale(Y, Q, "Y", img_name)
+    compress_greyscale(Cb, Q, "Cb", img_name)
+    compress_greyscale(Cr, Q, "Cr", img_name)
+    return

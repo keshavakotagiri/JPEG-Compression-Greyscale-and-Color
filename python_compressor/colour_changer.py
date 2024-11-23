@@ -1,5 +1,6 @@
 import numpy as np
-
+from skimage import io, color
+from skimage.transform import resize
 # luminance quantization table :
 qY = np.array([[16, 11, 10, 16, 24, 40, 51, 61],  
                 [12, 12, 14, 19, 26, 48, 60, 55],
@@ -34,14 +35,31 @@ def rgb_to_ycbcr(img):
     ycbcr_image[:, :, 0] = 0.299 * red + 0.587 * green + 0.114 * blue
     ycbcr_image[:, :, 1] = 128 - 0.168736 * red - 0.331264 * green + 0.5 * blue
     ycbcr_image[:, :, 2] = 128 + 0.5 * red - 0.418688 * green - 0.081312 * blue
-
     return ycbcr_image
 
 # convert YCbCr image to RGB image
 def ycbcr_to_rgb(img):
-    rgb_image = img.copy()                                    
-    y, cb, cr = img[:,:,0], img[:,:,1], img[:,:,2]
-    rgb_image[:,:,0] = y + 1.14020*(cr-128)                       
-    rgb_image[:,:,1] = y - 0.34414*(cb-128) - 0.71414*(cr-128)   
-    rgb_image[:,:,2] = y + 1.77200*(cb-128)                     
+    # Ensure img is a floating-point array for precision
+    img = img.astype(np.float32)
+    y, cb, cr = img[:, :, 0], img[:, :, 1], img[:, :, 2]
+
+    # Apply the YCbCr to RGB conversion formulas
+    r = y + 1.402 * (cr - 128)
+    g = y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128)
+    b = y + 1.772 * (cb - 128)
+
+    # Stack and clip to ensure valid RGB values
+    rgb_image = np.stack((r, g, b), axis=-1)
+    rgb_image = np.clip(rgb_image, 0, 255).astype(np.uint8)
     return rgb_image
+
+
+def downsample_channel(channel, factor=2):
+    downsampled = resize(channel, (channel.shape[0] // factor, channel.shape[1] // factor), anti_aliasing=True)
+    downsampled = (downsampled * 255).astype(np.uint8)
+    return downsampled
+
+def upsample_channel(channel, original_shape):
+    upsampled = resize(channel, original_shape, anti_aliasing=True)
+    upsampled = (upsampled * 255).astype(np.uint8)
+    return upsampled

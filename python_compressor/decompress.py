@@ -5,47 +5,26 @@ import heapq
 from collections import defaultdict, Counter
 from huffman import huffman_decompress_binary
 from binary import load_from_file
-
-# def generate_quant_matrix(q):
-#     Q = np.array([
-#         [16, 11, 10, 16, 24, 40, 51, 61],
-#         [12, 12, 14, 19, 26, 58, 60, 55],
-#         [14, 13, 16, 24, 40, 57, 69, 56],
-#         [14, 17, 22, 29, 51, 87, 80, 62],
-#         [18, 22, 37, 56, 68, 109, 103, 77],
-#         [24, 35, 55, 64, 81, 104, 113, 92],
-#         [49, 64, 78, 87, 103, 121, 120, 101],
-#         [72, 92, 95, 98, 112, 100, 103, 99]
-#     ])
-#     return Q * (50/q)
+import colour_changer
 
 
 def decompress_blocks(compressed_data, block_size=64, marker=32767):
     blocks = []
     current_block = []
-    
+    # print("num of blocks just before decompression: ", list(compressed_data).count(marker))
     for num in compressed_data:
         if num == marker:  # When the EOB marker is found
-            # Ensure the block size is 64
-            if len(current_block) > 0:  # Avoid appending empty blocks
-                remaining_zeros = block_size - len(current_block)
-                current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
-                blocks.append(np.array(current_block))  # Add the block to the list
+            remaining_zeros = block_size - len(current_block)
+            current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
+            blocks.append(np.array(current_block))  # Add the block to the list
             current_block = []  # Reset for the next block
         else:
-            current_block.append(num)  # Add the number to the current block
-        
+            current_block.append(num)  # Add the number to the current block 
         # If we reach 64 elements without seeing the EOB (this should not usually happen)
         if len(current_block) == block_size:
             blocks.append(np.array(current_block))  # Add the full block to the list
             current_block = []  # Reset for the next block
     
-    # If there's any leftover data that isn't a full block, pad it
-    if len(current_block) > 0:
-        remaining_zeros = block_size - len(current_block)
-        current_block.extend([0] * remaining_zeros)  # Add trailing zeros back
-        blocks.append(np.array(current_block))  # Add the final block
-
     return blocks
 
 def reverse_zigzag_order(zigzag_block):
@@ -72,10 +51,6 @@ def reverse_zigzag_order(zigzag_block):
     
     return block
 
-# def convert_to_8x8(block):
-#     # Reshape the block (a 1D array with 64 elements) into a 2D array (8x8)
-#     return np.reshape(block, (8, 8))
-
 def apply_idct_dequantize(block, Q):
     block_dequantized = block * Q
     # Apply IDCT to each row
@@ -96,15 +71,12 @@ def rejoin_blocks(blocks, num_H_blocks, num_W_blocks):
                 raise IndexError("Not enough blocks to fill the entire image")
             # Place each block in the correct position in the reconstructed image
             reconstructed_image[i*8:(i+1)*8, j*8:(j+1)*8] = blocks[block_index]
-            block_index += 1
-    
+            block_index += 1  
     return reconstructed_image
-
 
 def decompress(filename, Q, img_name, color):
     encoded_data = load_from_file(filename)
-    # print(encoded_data[:100])
-    # print(f"encoded_data[:10]: {encoded_data[:10]}")
+
     grey_or_col = encoded_data[0]
     encoded_data = encoded_data[1:]
     # print(type(grey_or_col))
@@ -127,6 +99,11 @@ def decompress(filename, Q, img_name, color):
 ###############################################################################################################
 
 def decompress_greyscale(encoded_data, Q, img_name, num_H_blocks, num_W_blocks, color):
+    pad_h = int(encoded_data[:3], 2)
+    encoded_data = encoded_data[3:]
+    pad_w = int(encoded_data[:3], 2)
+    encoded_data = encoded_data[3:]
+
     arr = np.array(huffman_decompress_binary(encoded_data))
     print(arr.shape, "->", color)
     blocks = decompress_blocks(arr)
@@ -142,11 +119,22 @@ def decompress_greyscale(encoded_data, Q, img_name, num_H_blocks, num_W_blocks, 
     reconstructed_image = rejoin_blocks(idct_dequantize_blocks, num_H_blocks, num_W_blocks)
 
     image_to_save = np.clip(reconstructed_image, 0, 255).astype(np.uint8)  # Clip values to range 0-255 and convert to uint8
+
+    # if color == "Cb" or color == "Cr":
+    #     image_to_save = colour_changer.upsample_channel(image_to_save, (num_H_blocks * 8, num_W_blocks * 8)).astype(np.uint8) 
     
-    # # Save the image using skimage.io.imsave
-    img_name += "_" + color + "compressed.jpg" # remove the .bin at the end and add .jpg
+
+    original_height = image_to_save.shape[0] - pad_h
+    original_width = image_to_save.shape[1] - pad_w
+    image_to_save = image_to_save[:original_height, :original_width]
+    print(image_to_save.shape, "->", color)
+    # Save the image using skimage.io.imsave
+    if color == "grey":
+        img_name += "_compressed.jpg"
+    else:
+        img_name += "_" + color + "_compressed.jpg" # remove the .bin at the end and add .jpg
     io.imsave(img_name, image_to_save)
-    return
+    return image_to_save
 
 def decompress_color(encoded_data, Q, filename, num_H_blocks, num_W_blocks):
     return
